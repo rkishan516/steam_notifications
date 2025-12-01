@@ -65,14 +65,13 @@ class NotificationController {
       return;
     }
 
-    final active = _activeNotifications[index];
+    final active = _activeNotifications.removeAt(index);
     active.cancelTimer();
     active.notification.onDismiss?.call();
 
     final controller = active.controller as RegularWindowController;
     controller.destroy();
 
-    _activeNotifications.removeAt(index);
     _processQueue();
   }
 

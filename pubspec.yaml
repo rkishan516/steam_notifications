@@ -11,6 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
   uuid: ^4.5.1
+  window_decoration:
+    git:
+      url: https://github.com/rkishan516/window_decoration.git
+      path: packages/window_decoration
 
 dev_dependencies:
   flutter_test:

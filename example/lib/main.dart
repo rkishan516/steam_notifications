@@ -13,15 +13,6 @@ class MainWindowDelegate extends RegularWindowControllerDelegate {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the notification system
-  await SteamNotifications.initialize(
-    config: const SteamNotificationConfig(
-      position: NotificationPosition.bottomRight,
-      maxVisibleNotifications: 3,
-      defaultDuration: Duration(seconds: 5),
-    ),
-  );
-
   // Create main window
   final controller = RegularWindowController(
     preferredSize: const Size(800, 600),
@@ -32,7 +23,16 @@ void main() async {
   runWidget(
     RegularWindow(
       controller: controller,
-      child: const ExampleApp(),
+      // Wrap the app with NotificationManager to enable notifications
+      child: NotificationManager(
+        key: SteamNotifications.managerKey,
+        config: const SteamNotificationConfig(
+          position: NotificationPosition.bottomRight,
+          maxVisibleNotifications: 3,
+          defaultDuration: Duration(seconds: 5),
+        ),
+        child: const ExampleApp(),
+      ),
     ),
   );
 }

@@ -30,7 +30,7 @@ library;
 import 'package:flutter/widgets.dart';
 
 import 'src/config/notification_config.dart';
-import 'src/core/notification_controller.dart';
+import 'src/core/notification_manager.dart';
 import 'src/models/notification.dart';
 
 // Export Flutter's internal window APIs for multi-window support
@@ -39,6 +39,8 @@ export 'package:flutter/src/widgets/_window.dart';
 // Export public API
 export 'src/config/notification_config.dart';
 export 'src/config/notification_position.dart';
+export 'src/core/notification_manager.dart'
+    show NotificationManager, NotificationBuilder;
 export 'src/models/notification.dart';
 export 'src/theme/steam_colors.dart';
 export 'src/theme/steam_theme.dart';
@@ -47,9 +49,25 @@ export 'src/theme/steam_theme.dart';
 ///
 /// Use this class to initialize the notification system and show notifications.
 ///
-/// Example:
+/// ## Usage
+///
+/// Wrap your main window widget with [NotificationManager]:
+///
 /// ```dart
-/// await SteamNotifications.initialize();
+/// void main() {
+///   runWidget(
+///     RegularWindow(
+///       controller: RegularWindowController(...),
+///       child: NotificationManager(
+///         child: MaterialApp(...),
+///       ),
+///     ),
+///   );
+/// }
+/// ```
+///
+/// Then show notifications:
+/// ```dart
 /// SteamNotifications.showAchievement(
 ///   title: 'Achievement Unlocked!',
 ///   description: 'You completed the tutorial',
@@ -58,23 +76,32 @@ export 'src/theme/steam_theme.dart';
 class SteamNotifications {
   SteamNotifications._();
 
-  static NotificationController? _controller;
+  static final GlobalKey<NotificationManagerState> _managerKey =
+      GlobalKey<NotificationManagerState>();
+
+  /// Global key for the NotificationManager widget
+  ///
+  /// Use this when creating the NotificationManager:
+  /// ```dart
+  /// NotificationManager(
+  ///   key: SteamNotifications.managerKey,
+  ///   child: YourApp(),
+  /// )
+  /// ```
+  static GlobalKey<NotificationManagerState> get managerKey => _managerKey;
 
   /// Whether the notification system has been initialized
-  static bool get isInitialized => _controller != null;
+  static bool get isInitialized => _managerKey.currentState != null;
 
   /// Initialize the notification system
   ///
-  /// Must be called after [WidgetsFlutterBinding.ensureInitialized].
   /// Optionally provide a custom [config] for notification behavior.
+  /// Note: The [NotificationManager] widget must be in the widget tree
+  /// for notifications to work.
   static Future<void> initialize({SteamNotificationConfig? config}) async {
-    if (_controller != null) {
-      return;
+    if (config != null && _managerKey.currentState != null) {
+      _managerKey.currentState!.configure(config);
     }
-
-    _controller = NotificationController(
-      config ?? const SteamNotificationConfig(),
-    );
   }
 
   /// Show any type of notification
@@ -83,7 +110,7 @@ class SteamNotifications {
   /// instead.
   static Future<void> show(SteamNotification notification) async {
     _ensureInitialized();
-    await _controller!.show(notification);
+    await _managerKey.currentState!.show(notification);
   }
 
   /// Show an achievement notification
@@ -193,38 +220,38 @@ class SteamNotifications {
   /// Changes will apply to future notifications.
   static void configure(SteamNotificationConfig config) {
     _ensureInitialized();
-    _controller!.configure(config);
+    _managerKey.currentState!.configure(config);
   }
 
   /// Dismiss a specific notification by ID
   static void dismiss(String id) {
     _ensureInitialized();
-    _controller!.dismiss(id);
+    _managerKey.currentState!.dismiss(id);
   }
 
   /// Dismiss all visible and queued notifications
   static void dismissAll() {
     _ensureInitialized();
-    _controller!.dismissAll();
+    _managerKey.currentState!.dismissAll();
   }
 
   /// Get the number of currently visible notifications
   static int get activeCount {
     _ensureInitialized();
-    return _controller!.activeCount;
+    return _managerKey.currentState!.activeCount;
   }
 
   /// Get the number of queued notifications
   static int get queuedCount {
     _ensureInitialized();
-    return _controller!.queuedCount;
+    return _managerKey.currentState!.queuedCount;
   }
 
   static void _ensureInitialized() {
     assert(
-      _controller != null,
-      'SteamNotifications has not been initialized. '
-      'Call SteamNotifications.initialize() first.',
+      _managerKey.currentState != null,
+      'SteamNotifications: NotificationManager widget not found in widget tree. '
+      'Wrap your app with NotificationManager(key: SteamNotifications.managerKey, child: YourApp()).',
     );
   }
 }
