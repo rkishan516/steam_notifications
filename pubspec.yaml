@@ -1,0 +1,18 @@
+name: steam_notifications
+description: Steam-inspired desktop notifications for Flutter using multi-window APIs
+version: 0.1.0
+repository: https://github.com/example/steam_notifications
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
