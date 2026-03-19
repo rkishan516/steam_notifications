@@ -43,13 +43,9 @@ class _ActiveNotificationState {
 
 /// Delegate for handling notification window lifecycle events
 class _NotificationWindowDelegate extends RegularWindowControllerDelegate {
-  _NotificationWindowDelegate({
-    required this.onDestroyed,
-    required this.onCreated,
-  });
+  _NotificationWindowDelegate({required this.onDestroyed});
 
   final VoidCallback onDestroyed;
-  final VoidCallback onCreated;
 
   @override
   void onWindowDestroyed() {
@@ -203,15 +199,19 @@ class NotificationManagerState extends State<NotificationManager> {
     final size = _getNotificationSize(notification);
     final stackIndex = _activeNotifications.length;
 
-    // Calculate position for the notification
+    // Calculate position in physical pixels (setBounds uses physical coords)
     final position = _calculatePosition(size, stackIndex);
+
+    // Get physical size for setBounds
+    final dpr = WidgetsBinding
+        .instance.platformDispatcher.displays.first.devicePixelRatio;
+    final physicalSize = size * dpr;
 
     final controller = RegularWindowController(
       preferredSize: size,
       title: '',
       delegate: _NotificationWindowDelegate(
         onDestroyed: () => _handleWindowDestroyed(notification.id),
-        onCreated: () {},
       ),
     );
 
@@ -226,10 +226,11 @@ class NotificationManagerState extends State<NotificationManager> {
       _activeNotifications.add(activeNotification);
     });
 
-    // Configure the window after it's created using window_decoration
-    // We need to wait a frame for the window to be created
+    // Configure the window after the first frame so the controller's
+    // view is initialized. The window starts hidden and is only shown
+    // after positioning via service.show() in _configureNotificationWindow.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _configureNotificationWindow(controller, position, size);
+      await _configureNotificationWindow(controller, position, physicalSize);
     });
 
     // Schedule auto-dismiss
@@ -237,24 +238,39 @@ class NotificationManagerState extends State<NotificationManager> {
   }
 
   /// Configure the notification window to be borderless, positioned correctly,
-  /// and hidden from taskbar
+  /// and hidden from taskbar.
+  ///
+  /// [position] and [physicalSize] must be in physical pixel coordinates
+  /// since [WindowDecorationService.setBounds] maps directly to
+  /// Win32 SetWindowPos.
   Future<void> _configureNotificationWindow(
     RegularWindowController controller,
     Offset position,
-    Size size,
+    Size physicalSize,
   ) async {
     final service = WindowDecorationService(controller);
 
     // Hide title bar first
     await service.setTitleBarStyle(TitleBarStyle.hidden);
 
-    // Set window position and size
+    // Set window position and size in physical pixels
     await service.setBounds(WindowBounds(
       x: position.dx,
       y: position.dy,
-      width: size.width,
-      height: size.height,
+      width: physicalSize.width,
+      height: physicalSize.height,
     ));
+
+    // Prevent user from resizing the notification window
+    await service.setSizeConstraints(
+      minWidth: physicalSize.width,
+      minHeight: physicalSize.height,
+      maxWidth: physicalSize.width,
+      maxHeight: physicalSize.height,
+    );
+
+    // Set background color to match notification theme
+    await service.setBackgroundColor(const Color(0xFF1B2838));
 
     // Hide from taskbar
     await service.setSkipTaskbar(skip: true);
@@ -266,38 +282,46 @@ class NotificationManagerState extends State<NotificationManager> {
     await service.show();
   }
 
-  /// Calculate the position for a notification based on config and stack index
+  /// Calculate the position for a notification based on config and stack index.
+  ///
+  /// Returns position in physical pixel coordinates because
+  /// [WindowDecorationService.setBounds] passes values directly to
+  /// Win32 SetWindowPos which operates in physical screen coordinates.
   Offset _calculatePosition(Size notificationSize, int stackIndex) {
-    // Get the actual screen/display size from the platform dispatcher
     final display = WidgetsBinding.instance.platformDispatcher.displays.first;
-    final screenSize = display.size / display.devicePixelRatio;
+    final dpr = display.devicePixelRatio;
+    // Use physical pixel screen size since setBounds uses physical coordinates
+    final screenSize = display.size;
 
     final margin = _config.margin;
     final spacing = _config.spacing;
 
-    // Calculate the vertical offset for stacking
-    final stackOffset = stackIndex * (notificationSize.height + spacing);
+    // Scale notification size and layout values to physical pixels
+    final physicalWidth = notificationSize.width * dpr;
+    final physicalHeight = notificationSize.height * dpr;
+    final physicalSpacing = spacing * dpr;
+    final stackOffset = stackIndex * (physicalHeight + physicalSpacing);
 
     double left, top;
 
     switch (_config.position) {
       case NotificationPosition.topLeft:
-        left = margin.left;
-        top = margin.top + stackOffset;
+        left = margin.left * dpr;
+        top = margin.top * dpr + stackOffset;
       case NotificationPosition.topRight:
-        left = screenSize.width - margin.right - notificationSize.width;
-        top = margin.top + stackOffset;
+        left = screenSize.width - margin.right * dpr - physicalWidth;
+        top = margin.top * dpr + stackOffset;
       case NotificationPosition.bottomLeft:
-        left = margin.left;
+        left = margin.left * dpr;
         top = screenSize.height -
-            margin.bottom -
-            notificationSize.height -
+            margin.bottom * dpr -
+            physicalHeight -
             stackOffset;
       case NotificationPosition.bottomRight:
-        left = screenSize.width - margin.right - notificationSize.width;
+        left = screenSize.width - margin.right * dpr - physicalWidth;
         top = screenSize.height -
-            margin.bottom -
-            notificationSize.height -
+            margin.bottom * dpr -
+            physicalHeight -
             stackOffset;
     }
 
