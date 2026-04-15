@@ -248,38 +248,30 @@ class NotificationManagerState extends State<NotificationManager> {
     Offset position,
     Size physicalSize,
   ) async {
-    final service = WindowDecorationService(controller);
-
-    // Hide title bar first
-    await service.setTitleBarStyle(TitleBarStyle.hidden);
-
-    // Set window position and size in physical pixels
-    await service.setBounds(WindowBounds(
-      x: position.dx,
-      y: position.dy,
-      width: physicalSize.width,
-      height: physicalSize.height,
-    ));
+    controller.enableDecoratedWindow();
+    controller.setSize(Size(physicalSize.width, physicalSize.height));
+    final window = DecoratedWindow.forController(controller);
+    window?.setPosition(Offset(position.dx, position.dy));
 
     // Prevent user from resizing the notification window
-    await service.setSizeConstraints(
+    controller.setConstraints(BoxConstraints(
       minWidth: physicalSize.width,
       minHeight: physicalSize.height,
       maxWidth: physicalSize.width,
       maxHeight: physicalSize.height,
-    );
+    ));
 
     // Set background color to match notification theme
-    await service.setBackgroundColor(const Color(0xFF1B2838));
+    await window?.setBackgroundColor(const Color(0xFF1B2838));
 
     // Hide from taskbar
-    await service.setSkipTaskbar(skip: true);
+    await window?.setSkipTaskbar(skip: true);
 
     // Keep notifications on top
-    await service.setAlwaysOnTop(alwaysOnTop: true);
+    await window?.setAlwaysOnTop(alwaysOnTop: true);
 
     // Show the window
-    await service.show();
+    await window?.show();
   }
 
   /// Calculate the position for a notification based on config and stack index.

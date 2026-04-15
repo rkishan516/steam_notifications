@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /d/rkishan516/steam_notifications -type f \\\\\\(-name *.cpp -o -name *.c -o -name *.h -o -name *.swift -o -name *.kt \\\\\\))",
+      "Bash(flutter run:*)",
+      "Bash(echo $PUB_CACHE)",
+      "Bash(echo $LOCALAPPDATA)",
+      "Bash(find D:/.pub-cache/git -type f -name *window_decoration*)"
+    ]
+  }
+}
