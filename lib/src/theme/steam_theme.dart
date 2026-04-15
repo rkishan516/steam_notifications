@@ -51,7 +51,11 @@ ThemeData steamNotificationTheme() {
   );
 }
 
-/// Box decoration for notification containers
+/// Box decoration for notification containers.
+///
+/// Defaults to a solid surface fill aligned with the FUSE-style card look.
+/// Pass a [gradient] to opt into the legacy gradient background or
+/// [backgroundColor] to override the fill.
 BoxDecoration steamNotificationDecoration({
   Gradient? gradient,
   Color? backgroundColor,
@@ -60,8 +64,10 @@ BoxDecoration steamNotificationDecoration({
   bool showShadow = true,
 }) {
   return BoxDecoration(
-    gradient: gradient ?? SteamGradients.defaultBackground,
-    color: gradient == null ? backgroundColor : null,
+    gradient: gradient,
+    color: gradient == null
+        ? (backgroundColor ?? SteamColors.surface)
+        : null,
     borderRadius: BorderRadius.circular(borderRadius),
     border: showBorder
         ? Border.all(
@@ -72,14 +78,14 @@ BoxDecoration steamNotificationDecoration({
     boxShadow: showShadow
         ? const [
             BoxShadow(
-              color: SteamColors.shadow,
-              blurRadius: 16,
-              offset: Offset(0, 4),
+              color: SteamColors.shadowStrong,
+              blurRadius: 24,
+              offset: Offset(0, 8),
             ),
             BoxShadow(
-              color: SteamColors.shadowStrong,
+              color: SteamColors.shadow,
               blurRadius: 4,
-              offset: Offset(0, 2),
+              offset: Offset(0, 1),
             ),
           ]
         : null,

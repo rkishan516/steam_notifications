@@ -46,9 +46,10 @@ class ExampleApp extends StatelessWidget {
       title: 'Steam Notifications Demo',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF1B2838),
+        scaffoldBackgroundColor: const Color(0xFF121212),
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF66C0F4),
+          primary: Color(0xFF00AAFF),
+          surface: Color(0xFF1D1D1D),
         ),
       ),
       home: const DemoPage(),
@@ -71,7 +72,7 @@ class _DemoPageState extends State<DemoPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Steam Notifications Demo'),
-        backgroundColor: const Color(0xFF171A21),
+        backgroundColor: const Color(0xFF1D1D1D),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -212,7 +213,7 @@ class _DemoPageState extends State<DemoPage> {
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF66C0F4),
+            color: Color(0xFF00AAFF),
           ),
         ),
         const SizedBox(height: 12),

@@ -10,6 +10,7 @@ import '../config/notification_config.dart';
 import '../config/notification_position.dart';
 import '../models/notification.dart';
 import '../presentation/notification_container.dart';
+import '../theme/steam_colors.dart';
 import '../theme/steam_theme.dart';
 import 'notification_queue.dart';
 
@@ -227,10 +228,14 @@ class NotificationManagerState extends State<NotificationManager> {
     });
 
     // Configure the window after the first frame so the controller's
-    // view is initialized. The window starts hidden and is only shown
-    // after positioning via service.show() in _configureNotificationWindow.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _configureNotificationWindow(controller, position, physicalSize);
+    // view is initialized, then defer the Win32 calls to the next event
+    // loop turn. SetWindowPos / setConstraints synchronously dispatch
+    // WM_WINDOWPOSCHANGED, which re-enters the Flutter scheduler — running
+    // them inside a post-frame callback violates the scheduler phase.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Timer.run(() async {
+        await _configureNotificationWindow(controller, position, physicalSize);
+      });
     });
 
     // Schedule auto-dismiss
@@ -262,7 +267,7 @@ class NotificationManagerState extends State<NotificationManager> {
     ));
 
     // Set background color to match notification theme
-    await window?.setBackgroundColor(const Color(0xFF1B2838));
+    await window?.setBackgroundColor(SteamColors.surface);
 
     // Hide from taskbar
     await window?.setSkipTaskbar(skip: true);

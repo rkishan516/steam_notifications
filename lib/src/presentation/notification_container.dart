@@ -124,20 +124,12 @@ class _NotificationContainerState extends State<NotificationContainer>
   }
 
   BoxDecoration _buildDecoration() {
-    final gradient = switch (widget.notification) {
-      AchievementNotification() => SteamGradients.achievementBackground,
-      MessageNotification() => SteamGradients.messageBackground,
-      CustomNotification(backgroundColor: final bg) when bg != null => null,
-      CustomNotification() => SteamGradients.defaultBackground,
-    };
-
     final backgroundColor = switch (widget.notification) {
-      CustomNotification(backgroundColor: final bg) => bg,
-      _ => null,
+      CustomNotification(backgroundColor: final bg) when bg != null => bg,
+      _ => SteamColors.surface,
     };
 
     return steamNotificationDecoration(
-      gradient: gradient,
       backgroundColor: backgroundColor,
       showBorder: true,
       showShadow: true,
