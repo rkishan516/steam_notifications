@@ -31,7 +31,9 @@ import 'package:flutter/widgets.dart';
 
 import 'src/config/notification_config.dart';
 import 'src/core/notification_manager.dart';
+import 'src/core/steam_notification_service.dart';
 import 'src/models/notification.dart';
+import 'src/windows/notification_window.dart';
 
 // Export Flutter's internal window APIs for multi-window support
 export 'package:flutter/src/widgets/_window.dart';
@@ -41,6 +43,8 @@ export 'src/config/notification_config.dart';
 export 'src/config/notification_position.dart';
 export 'src/core/notification_manager.dart'
     show NotificationManager, NotificationBuilder;
+export 'src/core/steam_notification_service.dart'
+    show SteamNotificationService, ActiveNotificationEntry;
 export 'src/models/notification.dart';
 export 'src/theme/steam_colors.dart';
 export 'src/theme/steam_theme.dart';
@@ -49,21 +53,31 @@ export 'src/theme/steam_theme.dart';
 ///
 /// Use this class to initialize the notification system and show notifications.
 ///
-/// ## Usage
+/// ## Integration options
 ///
-/// Wrap your main window widget with [NotificationManager]:
+/// Place notifications at the root of the app so they persist across
+/// main-window teardown (e.g. when the app minimises to a system tray):
 ///
 /// ```dart
-/// void main() {
-///   runWidget(
-///     RegularWindow(
-///       controller: RegularWindowController(...),
-///       child: NotificationManager(
-///         child: MaterialApp(...),
-///       ),
-///     ),
-///   );
-/// }
+/// ListenableBuilder(
+///   listenable: SteamNotificationService.instance,
+///   builder: (context, _) => ViewCollection(
+///     views: [
+///       if (mainController != null)
+///         RegularWindow(controller: mainController, child: MyApp()),
+///       ...SteamNotifications.buildNotificationViews(),
+///     ],
+///   ),
+/// );
+/// ```
+///
+/// Or wrap your app with [NotificationManager] (notifications disappear
+/// when the host widget tree unmounts):
+///
+/// ```dart
+/// NotificationManager(
+///   child: MaterialApp(...),
+/// );
 /// ```
 ///
 /// Then show notifications:
@@ -79,51 +93,41 @@ class SteamNotifications {
   static final GlobalKey<NotificationManagerState> _managerKey =
       GlobalKey<NotificationManagerState>();
 
-  /// Global key for the NotificationManager widget
+  /// Global key for the (optional) [NotificationManager] widget.
   ///
-  /// Use this when creating the NotificationManager:
-  /// ```dart
-  /// NotificationManager(
-  ///   key: SteamNotifications.managerKey,
-  ///   child: YourApp(),
-  /// )
-  /// ```
+  /// Kept for backwards compatibility. Notification state now lives in
+  /// [SteamNotificationService] and does not require a manager widget
+  /// to be mounted.
   static GlobalKey<NotificationManagerState> get managerKey => _managerKey;
 
-  /// Whether the notification system has been initialized
-  static bool get isInitialized => _managerKey.currentState != null;
+  static SteamNotificationService get _service =>
+      SteamNotificationService.instance;
 
-  /// Initialize the notification system
+  /// Exposes the singleton service as a [Listenable] so host apps can
+  /// drive rebuilds (e.g. inside a [ListenableBuilder]) without having
+  /// to import [SteamNotificationService] directly.
+  static Listenable get listenable => SteamNotificationService.instance;
+
+  /// Whether the notification system is ready to accept notifications.
+  ///
+  /// Always `true` now that state lives in a singleton service; kept for
+  /// backwards compatibility with callers that gate on it.
+  static bool get isInitialized => true;
+
+  /// Initialize the notification system.
   ///
   /// Optionally provide a custom [config] for notification behavior.
-  /// Note: The [NotificationManager] widget must be in the widget tree
-  /// for notifications to work.
   static Future<void> initialize({SteamNotificationConfig? config}) async {
-    if (config != null && _managerKey.currentState != null) {
-      _managerKey.currentState!.configure(config);
+    if (config != null) {
+      _service.configure(config);
     }
   }
 
-  /// Show any type of notification
-  ///
-  /// For convenience, use [showAchievement], [showMessage], or [showCustom]
-  /// instead.
-  static Future<void> show(SteamNotification notification) async {
-    _ensureInitialized();
-    await _managerKey.currentState!.show(notification);
-  }
+  /// Show any type of notification.
+  static Future<void> show(SteamNotification notification) =>
+      _service.show(notification);
 
-  /// Show an achievement notification
-  ///
-  /// [title] - The achievement title
-  /// [description] - The achievement description
-  /// [icon] - Custom icon widget (optional)
-  /// [iconUrl] - URL or asset path for the icon (optional)
-  /// [progress] - Progress value from 0.0 to 1.0 (optional)
-  /// [showUnlockedHeader] - Whether to show "ACHIEVEMENT UNLOCKED" header
-  /// [duration] - Custom duration before auto-dismiss (optional)
-  /// [onTap] - Callback when notification is tapped (optional)
-  /// [onDismiss] - Callback when notification is dismissed (optional)
+  /// Show an achievement notification.
   static Future<void> showAchievement({
     required String title,
     required String description,
@@ -150,15 +154,7 @@ class SteamNotifications {
     );
   }
 
-  /// Show a message notification
-  ///
-  /// [message] - The message content
-  /// [senderName] - Name of the sender (optional)
-  /// [avatar] - Custom avatar widget (optional)
-  /// [avatarUrl] - URL or asset path for the avatar (optional)
-  /// [duration] - Custom duration before auto-dismiss (optional)
-  /// [onTap] - Callback when notification is tapped (optional)
-  /// [onDismiss] - Callback when notification is dismissed (optional)
+  /// Show a message notification.
   static Future<void> showMessage({
     required String message,
     String? senderName,
@@ -181,16 +177,7 @@ class SteamNotifications {
     );
   }
 
-  /// Show a custom notification with any widget content
-  ///
-  /// [child] - The custom widget to display
-  /// [width] - Custom width (optional)
-  /// [height] - Custom height (optional)
-  /// [showCloseButton] - Whether to show the close button
-  /// [backgroundColor] - Custom background color (optional)
-  /// [duration] - Custom duration before auto-dismiss (optional)
-  /// [onTap] - Callback when notification is tapped (optional)
-  /// [onDismiss] - Callback when notification is dismissed (optional)
+  /// Show a custom notification with any widget content.
   static Future<void> showCustom({
     required Widget child,
     double? width,
@@ -215,43 +202,45 @@ class SteamNotifications {
     );
   }
 
-  /// Update the notification configuration
+  /// Update the notification configuration.
+  static void configure(SteamNotificationConfig config) =>
+      _service.configure(config);
+
+  /// Dismiss a specific notification by ID.
+  static void dismiss(String id) => _service.dismiss(id);
+
+  /// Dismiss all visible and queued notifications.
+  static void dismissAll() => _service.dismissAll();
+
+  /// Number of currently visible notifications.
+  static int get activeCount => _service.activeCount;
+
+  /// Number of queued notifications.
+  static int get queuedCount => _service.queuedCount;
+
+  /// Builds widgets for every active notification, suitable for
+  /// placement at the root level inside a [ViewCollection].
   ///
-  /// Changes will apply to future notifications.
-  static void configure(SteamNotificationConfig config) {
-    _ensureInitialized();
-    _managerKey.currentState!.configure(config);
-  }
-
-  /// Dismiss a specific notification by ID
-  static void dismiss(String id) {
-    _ensureInitialized();
-    _managerKey.currentState!.dismiss(id);
-  }
-
-  /// Dismiss all visible and queued notifications
-  static void dismissAll() {
-    _ensureInitialized();
-    _managerKey.currentState!.dismissAll();
-  }
-
-  /// Get the number of currently visible notifications
-  static int get activeCount {
-    _ensureInitialized();
-    return _managerKey.currentState!.activeCount;
-  }
-
-  /// Get the number of queued notifications
-  static int get queuedCount {
-    _ensureInitialized();
-    return _managerKey.currentState!.queuedCount;
-  }
-
-  static void _ensureInitialized() {
-    assert(
-      _managerKey.currentState != null,
-      'SteamNotifications: NotificationManager widget not found in widget tree. '
-      'Wrap your app with NotificationManager(key: SteamNotifications.managerKey, child: YourApp()).',
-    );
+  /// Each returned widget is a [RegularWindow] subclass, so they can be
+  /// spread directly into [ViewCollection.views]. Wrap the
+  /// [ViewCollection] builder in a [ListenableBuilder] listening to
+  /// [SteamNotificationService.instance] so the list rebuilds whenever
+  /// notifications appear or dismiss.
+  ///
+  /// This integration keeps notifications alive across host-window
+  /// lifecycle transitions (e.g. minimising the app to a system tray).
+  static List<Widget> buildNotificationViews() {
+    return _service.activeNotifications.map((active) {
+      return NotificationWindow(
+        key: ValueKey(active.notification.id),
+        controller: active.controller,
+        child: NotificationContentHost(
+          notification: active.notification,
+          config: _service.config,
+          onDismiss: () => _service.dismiss(active.notification.id),
+          customBuilder: _service.notificationBuilder,
+        ),
+      );
+    }).toList();
   }
 }
