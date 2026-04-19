@@ -13,7 +13,11 @@ class MainWindowDelegate extends RegularWindowControllerDelegate {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Create main window
+  // Configure notifications once at startup. The stack window lives at
+  // the root level so it survives main-window teardown (e.g. when the
+  // app minimises to the system tray).
+  await SteamNotifications.initialize(config: _buildConfig());
+
   final controller = RegularWindowController(
     preferredSize: const Size(800, 600),
     title: 'Steam Notifications Demo',
@@ -21,20 +25,66 @@ void main() async {
   );
 
   runWidget(
-    RegularWindow(
-      controller: controller,
-      // Wrap the app with NotificationManager to enable notifications
-      child: NotificationManager(
-        key: SteamNotifications.managerKey,
-        config: const SteamNotificationConfig(
-          position: NotificationPosition.bottomRight,
-          maxVisibleNotifications: 3,
-          defaultDuration: Duration(seconds: 5),
-        ),
-        child: const ExampleApp(),
+    ListenableBuilder(
+      listenable: SteamNotifications.listenable,
+      builder: (context, _) => ViewCollection(
+        views: [
+          RegularWindow(
+            controller: controller,
+            child: const ExampleApp(),
+          ),
+          ...SteamNotifications.buildNotificationViews(),
+        ],
       ),
     ),
   );
+}
+
+SteamNotificationConfig _buildConfig({
+  NotificationPosition position = NotificationPosition.bottomRight,
+}) => SteamNotificationConfig(
+  position: position,
+  defaultDuration: const Duration(seconds: 5),
+  themeData: ThemeData.dark().copyWith(
+    colorScheme: const ColorScheme.dark(
+      primary: Color(0xFF00AAFF),
+      surface: Color(0xFF1D1D1D),
+    ),
+  ),
+  stackDecorationBuilder: (context, activeCount) => BoxDecoration(
+    color: const Color(0xFF1D1D1D),
+    borderRadius: BorderRadius.circular(8),
+    border: Border.all(color: const Color(0xFF2A3F5F)),
+    boxShadow: const [
+      BoxShadow(
+        color: Color(0x99000000),
+        blurRadius: 24,
+        offset: Offset(0, 8),
+      ),
+    ],
+  ),
+  stackBackgroundBuilder: (context, info) => const _DemoLogoBackground(),
+);
+
+/// Sample background widget that illustrates the Steam/Valve-style logo
+/// reveal: because it's laid out across the full [capacity × slot] area,
+/// a partial stack naturally shows a partial logo.
+class _DemoLogoBackground extends StatelessWidget {
+  const _DemoLogoBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: 0.3,
+      child: Center(
+        child: Icon(
+          Icons.bolt,
+          size: 160,
+          color: const Color(0xFF00AAFF).withValues(alpha: 0.8),
+        ),
+      ),
+    );
+  }
 }
 
 class ExampleApp extends StatelessWidget {
@@ -79,8 +129,7 @@ class _DemoPageState extends State<DemoPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Position selector
-            _buildSection(
+            _Section(
               title: 'Position',
               child: Wrap(
                 spacing: 12,
@@ -90,21 +139,16 @@ class _DemoPageState extends State<DemoPage> {
                     label: Text(pos.name),
                     selected: _position == pos,
                     onSelected: (selected) {
-                      if (selected) {
-                        setState(() => _position = pos);
-                        SteamNotifications.configure(
-                          SteamNotificationConfig(position: pos),
-                        );
-                      }
+                      if (!selected) return;
+                      setState(() => _position = pos);
+                      SteamNotifications.configure(_buildConfig(position: pos));
                     },
                   );
                 }).toList(),
               ),
             ),
             const SizedBox(height: 24),
-
-            // Achievement notifications
-            _buildSection(
+            _Section(
               title: 'Achievement Notifications',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -130,9 +174,7 @@ class _DemoPageState extends State<DemoPage> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Message notifications
-            _buildSection(
+            _Section(
               title: 'Message Notifications',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,9 +194,7 @@ class _DemoPageState extends State<DemoPage> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Custom notifications
-            _buildSection(
+            _Section(
               title: 'Custom Notifications',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -168,17 +208,15 @@ class _DemoPageState extends State<DemoPage> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Controls
-            _buildSection(
+            _Section(
               title: 'Controls',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ElevatedButton.icon(
                     onPressed: _showMultiple,
-                    icon: const Icon(Icons.queue),
-                    label: const Text('Show Multiple (Test Queue)'),
+                    icon: const Icon(Icons.layers),
+                    label: const Text('Show Multiple (Test Stack Overflow)'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                     ),
@@ -198,27 +236,6 @@ class _DemoPageState extends State<DemoPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required Widget child,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF00AAFF),
-          ),
-        ),
-        const SizedBox(height: 12),
-        child,
-      ],
     );
   }
 
@@ -257,9 +274,7 @@ class _DemoPageState extends State<DemoPage> {
   }
 
   void _showMessageNoSender() {
-    SteamNotifications.showMessage(
-      message: 'Your friend is now online.',
-    );
+    SteamNotifications.showMessage(message: 'Your friend is now online.');
   }
 
   void _showCustom() {
@@ -269,11 +284,7 @@ class _DemoPageState extends State<DemoPage> {
         padding: const EdgeInsets.all(16),
         child: const Row(
           children: [
-            Icon(
-              Icons.card_giftcard,
-              size: 48,
-              color: Color(0xFFD4AF37),
-            ),
+            Icon(Icons.card_giftcard, size: 48, color: Color(0xFFD4AF37)),
             SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -305,10 +316,13 @@ class _DemoPageState extends State<DemoPage> {
     );
   }
 
+  /// Fires four notifications back-to-back. With the default
+  /// stackCapacity of 3, the first one is dropped and the newest one
+  /// lands at the bottom of the stack.
   void _showMultiple() {
     SteamNotifications.showAchievement(
       title: 'First Achievement',
-      description: 'This is the first notification',
+      description: 'This will be dropped when #4 arrives',
     );
     SteamNotifications.showAchievement(
       title: 'Second Achievement',
@@ -320,7 +334,33 @@ class _DemoPageState extends State<DemoPage> {
     );
     SteamNotifications.showMessage(
       senderName: 'System',
-      message: 'This one should be queued!',
+      message: 'Newest — pushes the stack up by one',
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF00AAFF),
+          ),
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
     );
   }
 }

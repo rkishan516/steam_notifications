@@ -3,14 +3,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/src/widgets/_window.dart';
 
-import '../theme/steam_theme.dart';
-
-/// A notification window that extends RegularWindow
+/// An OS-level window that hosts the notification stack.
 ///
-/// Each notification is displayed in its own OS window for a true
-/// Steam-like notification experience.
+/// The entire stack of active notifications shares this single window;
+/// the [child] is typically a `StackView` supplied by
+/// `SteamNotifications.buildNotificationViews`.
 class NotificationWindow extends RegularWindow {
-  /// Creates a notification window with the given controller and content
   NotificationWindow({
     required super.controller,
     required super.child,
@@ -30,10 +28,7 @@ class NotificationWindow extends RegularWindow {
               view: controller.rootView,
               child: Directionality(
                 textDirection: TextDirection.ltr,
-                child: Theme(
-                  data: steamNotificationTheme(),
-                  child: child,
-                ),
+                child: child,
               ),
             ),
           ),

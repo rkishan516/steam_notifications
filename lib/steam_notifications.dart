@@ -33,6 +33,7 @@ import 'src/config/notification_config.dart';
 import 'src/core/notification_manager.dart';
 import 'src/core/steam_notification_service.dart';
 import 'src/models/notification.dart';
+import 'src/presentation/stack_view.dart';
 import 'src/windows/notification_window.dart';
 
 // Export Flutter's internal window APIs for multi-window support
@@ -45,6 +46,7 @@ export 'src/core/notification_manager.dart'
     show NotificationManager, NotificationBuilder;
 export 'src/core/steam_notification_service.dart'
     show SteamNotificationService, ActiveNotificationEntry;
+export 'src/core/work_area.dart' show WorkAreaRect, WorkAreaResolver;
 export 'src/models/notification.dart';
 export 'src/theme/steam_colors.dart';
 export 'src/theme/steam_theme.dart';
@@ -215,32 +217,32 @@ class SteamNotifications {
   /// Number of currently visible notifications.
   static int get activeCount => _service.activeCount;
 
-  /// Number of queued notifications.
-  static int get queuedCount => _service.queuedCount;
-
-  /// Builds widgets for every active notification, suitable for
-  /// placement at the root level inside a [ViewCollection].
+  /// Builds the stack window, suitable for placement at the root level
+  /// inside a [ViewCollection].
   ///
-  /// Each returned widget is a [RegularWindow] subclass, so they can be
-  /// spread directly into [ViewCollection.views]. Wrap the
-  /// [ViewCollection] builder in a [ListenableBuilder] listening to
-  /// [SteamNotificationService.instance] so the list rebuilds whenever
+  /// Returns a single-element list containing the shared stack window
+  /// when any notification is active, or an empty list otherwise. Wrap
+  /// the [ViewCollection] builder in a [ListenableBuilder] listening to
+  /// [SteamNotifications.listenable] so the list rebuilds whenever
   /// notifications appear or dismiss.
   ///
-  /// This integration keeps notifications alive across host-window
+  /// This integration keeps the stack alive across host-window
   /// lifecycle transitions (e.g. minimising the app to a system tray).
   static List<Widget> buildNotificationViews() {
-    return _service.activeNotifications.map((active) {
-      return NotificationWindow(
-        key: ValueKey(active.notification.id),
-        controller: active.controller,
-        child: NotificationContentHost(
-          notification: active.notification,
+    final controller = _service.stackController;
+    final entries = _service.activeNotifications;
+    if (controller == null || entries.isEmpty) return const [];
+    return [
+      NotificationWindow(
+        key: const ValueKey('steam-notification-stack'),
+        controller: controller,
+        child: StackView(
+          entries: entries,
           config: _service.config,
-          onDismiss: () => _service.dismiss(active.notification.id),
-          customBuilder: _service.notificationBuilder,
+          notificationBuilder: _service.notificationBuilder,
+          onDismiss: _service.dismiss,
         ),
-      );
-    }).toList();
+      ),
+    ];
   }
 }

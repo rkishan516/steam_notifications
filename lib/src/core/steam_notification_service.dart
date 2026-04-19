@@ -12,22 +12,15 @@ import '../models/notification.dart';
 import '../theme/steam_colors.dart';
 import '../windows/notification_delegate.dart';
 import 'notification_manager.dart' show NotificationBuilder;
-import 'notification_queue.dart';
+import 'work_area.dart';
 
-/// Runtime entry for a single live notification managed by
-/// [SteamNotificationService].
+/// Runtime entry for a single live notification in the stack.
 class ActiveNotificationEntry {
   ActiveNotificationEntry({
     required this.notification,
-    required this.controller,
-    required this.size,
-    required this.stackIndex,
   });
 
   final SteamNotification notification;
-  final RegularWindowController controller;
-  final Size size;
-  final int stackIndex;
   Timer? dismissTimer;
 
   void cancelTimer() {
@@ -38,12 +31,13 @@ class ActiveNotificationEntry {
 
 /// Singleton that owns notification state for the whole app lifecycle.
 ///
-/// The state lives outside any widget, so notifications keep working
-/// when the host window is torn down (e.g. minimised to a system tray).
-/// Render the active notifications either by keeping a
-/// [NotificationManager] in the tree, or by placing
-/// `SteamNotifications.buildNotificationViews()` into a root-level
-/// [ViewCollection].
+/// All active notifications share a single OS window that grows/shrinks
+/// based on [SteamNotificationConfig.stackCapacity]. The window is
+/// positioned inside the work area (excluding the Windows taskbar).
+///
+/// Render the stack either by keeping a [NotificationManager] in the
+/// tree, or by placing `SteamNotifications.buildNotificationViews()`
+/// into a root-level [ViewCollection].
 class SteamNotificationService extends ChangeNotifier {
   SteamNotificationService._();
 
@@ -52,7 +46,7 @@ class SteamNotificationService extends ChangeNotifier {
 
   SteamNotificationConfig _config = const SteamNotificationConfig();
   final List<ActiveNotificationEntry> _activeNotifications = [];
-  final NotificationQueue _pendingQueue = NotificationQueue();
+  RegularWindowController? _stackController;
   NotificationBuilder? _notificationBuilder;
 
   SteamNotificationConfig get config => _config;
@@ -64,7 +58,10 @@ class SteamNotificationService extends ChangeNotifier {
 
   int get activeCount => _activeNotifications.length;
 
-  int get queuedCount => _pendingQueue.length;
+  /// Controller of the stack window, or `null` when no notifications
+  /// are currently visible. Exposed so the root [ViewCollection]
+  /// builder can render the window.
+  RegularWindowController? get stackController => _stackController;
 
   void configure(SteamNotificationConfig config) {
     _config = config;
@@ -77,104 +74,115 @@ class SteamNotificationService extends ChangeNotifier {
   }
 
   Future<void> show(SteamNotification notification) async {
-    if (_activeNotifications.length >= _config.maxVisibleNotifications) {
-      _pendingQueue.enqueue(notification);
-      return;
+    final isFirst = _activeNotifications.isEmpty;
+
+    if (_activeNotifications.length >= _config.stackCapacity) {
+      final dropped = _activeNotifications.removeAt(0);
+      dropped.cancelTimer();
+      dropped.notification.onDismiss?.call();
     }
-    await _displayNotification(notification);
+
+    final entry = ActiveNotificationEntry(notification: notification);
+    _activeNotifications.add(entry);
+    _scheduleAutoDismiss(entry);
+
+    notifyListeners();
+
+    if (isFirst) {
+      await _createStackWindow();
+    } else {
+      await _updateStackWindow();
+    }
   }
 
   void dismiss(String id) {
     final index = _activeNotifications.indexWhere(
       (n) => n.notification.id == id,
     );
-
-    if (index == -1) {
-      _pendingQueue.remove(id);
-      return;
-    }
+    if (index == -1) return;
 
     final active = _activeNotifications.removeAt(index);
     active.cancelTimer();
     active.notification.onDismiss?.call();
-    active.controller.destroy();
 
     notifyListeners();
-    _processQueue();
+
+    if (_activeNotifications.isEmpty) {
+      _destroyStackWindow();
+    } else {
+      _updateStackWindow();
+    }
   }
 
   void dismissAll() {
-    _pendingQueue.clear();
-
-    for (final active in _activeNotifications.toList()) {
+    for (final active in _activeNotifications) {
       active.cancelTimer();
       active.notification.onDismiss?.call();
-      active.controller.destroy();
     }
-
     _activeNotifications.clear();
+    _destroyStackWindow();
     notifyListeners();
   }
 
-  Future<void> _displayNotification(SteamNotification notification) async {
-    final size = _getNotificationSize(notification);
-    final stackIndex = _activeNotifications.length;
-
-    final position = _calculatePosition(size, stackIndex);
-
-    final dpr = WidgetsBinding
-        .instance
-        .platformDispatcher
-        .displays
-        .first
-        .devicePixelRatio;
-    final physicalSize = size * dpr;
+  Future<void> _createStackWindow() async {
+    final geometry = _resolveGeometry();
+    if (geometry == null) return;
 
     final controller = RegularWindowController(
-      preferredSize: size,
+      preferredSize: geometry.logicalSize,
       title: '',
       delegate: NotificationWindowDelegate(
-        onDestroyed: () => _handleWindowDestroyed(notification.id),
+        onDestroyed: _handleWindowDestroyed,
       ),
     );
 
-    final entry = ActiveNotificationEntry(
-      notification: notification,
-      controller: controller,
-      size: size,
-      stackIndex: stackIndex,
-    );
-
-    _activeNotifications.add(entry);
+    _stackController = controller;
     notifyListeners();
 
     // Defer native Win32 calls to the next event loop turn so they don't
     // re-enter the scheduler during a post-frame callback.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Timer.run(() async {
-        await _configureNotificationWindow(controller, position, physicalSize);
+        await _configureStackWindow(controller, geometry);
       });
     });
-
-    _scheduleAutoDismiss(entry);
   }
 
-  Future<void> _configureNotificationWindow(
+  Future<void> _updateStackWindow() async {
+    final controller = _stackController;
+    if (controller == null) return;
+
+    final geometry = _resolveGeometry();
+    if (geometry == null) return;
+
+    final window = DecoratedWindow.forController(controller);
+    controller.setSize(geometry.physicalSize);
+    controller.setConstraints(
+      BoxConstraints(
+        minWidth: geometry.physicalSize.width,
+        minHeight: geometry.physicalSize.height,
+        maxWidth: geometry.physicalSize.width,
+        maxHeight: geometry.physicalSize.height,
+      ),
+    );
+    await window?.setPosition(geometry.physicalPosition);
+  }
+
+  Future<void> _configureStackWindow(
     RegularWindowController controller,
-    Offset position,
-    Size physicalSize,
+    _StackGeometry geometry,
   ) async {
     controller.enableDecoratedWindow();
-    controller.setSize(Size(physicalSize.width, physicalSize.height));
+    controller.setSize(geometry.physicalSize);
     final window = DecoratedWindow.forController(controller);
-    window?.setPosition(Offset(position.dx, position.dy));
+    await window?.setPosition(geometry.physicalPosition);
 
     controller.setConstraints(
       BoxConstraints(
-        minWidth: physicalSize.width,
-        minHeight: physicalSize.height,
-        maxWidth: physicalSize.width,
-        maxHeight: physicalSize.height,
+        minWidth: geometry.physicalSize.width,
+        minHeight: geometry.physicalSize.height,
+        maxWidth: geometry.physicalSize.width,
+        maxHeight: geometry.physicalSize.height,
       ),
     );
 
@@ -184,92 +192,144 @@ class SteamNotificationService extends ChangeNotifier {
     await window?.show();
   }
 
-  Offset _calculatePosition(Size notificationSize, int stackIndex) {
-    final display = WidgetsBinding.instance.platformDispatcher.displays.first;
-    final dpr = display.devicePixelRatio;
-    final screenSize = display.size;
+  void _destroyStackWindow() {
+    _stackController?.destroy();
+    _stackController = null;
+    notifyListeners();
+  }
 
-    final margin = _config.margin;
-    final spacing = _config.spacing;
+  void _handleWindowDestroyed() {
+    _stackController = null;
+    for (final active in _activeNotifications) {
+      active.cancelTimer();
+    }
+    _activeNotifications.clear();
+    notifyListeners();
+  }
 
-    final physicalWidth = notificationSize.width * dpr;
-    final physicalHeight = notificationSize.height * dpr;
-    final physicalSpacing = spacing * dpr;
-    final stackOffset = stackIndex * (physicalHeight + physicalSpacing);
+  _StackGeometry? _resolveGeometry() {
+    if (_activeNotifications.isEmpty) return null;
 
-    double left;
-    double top;
+    final resolver =
+        _config.workAreaResolver ?? WorkAreaResolver.defaultForPlatform();
+    final workArea = resolver.resolve();
+    final dpr = workArea.devicePixelRatio;
 
+    final capacity = _config.stackCapacity;
+    final k = _activeNotifications.length.clamp(1, capacity);
+    final slotHeight = _slotHeight();
+    final slotWidth = _config.defaultWidth;
+
+    final slots = slotsForCount(k, capacity, _config.position);
+    final minSlot = slots.first;
+    final maxSlot = slots.last;
+    final visibleSlots = maxSlot - minSlot + 1;
+
+    final fullStackHeight = slotHeight * capacity;
+    final marginRight = _config.margin.right;
+    final marginBottom = _config.margin.bottom;
+    final marginLeft = _config.margin.left;
+    final marginTop = _config.margin.top;
+
+    final workAreaLogical = Size(
+      workArea.size.width / dpr,
+      workArea.size.height / dpr,
+    );
+
+    final double anchorLeft;
+    final double anchorTop;
     switch (_config.position) {
-      case NotificationPosition.topLeft:
-        left = margin.left * dpr;
-        top = margin.top * dpr + stackOffset;
-      case NotificationPosition.topRight:
-        left = screenSize.width - margin.right * dpr - physicalWidth;
-        top = margin.top * dpr + stackOffset;
-      case NotificationPosition.bottomLeft:
-        left = margin.left * dpr;
-        top =
-            screenSize.height -
-            margin.bottom * dpr -
-            physicalHeight -
-            stackOffset;
       case NotificationPosition.bottomRight:
-        left = screenSize.width - margin.right * dpr - physicalWidth;
-        top =
-            screenSize.height -
-            margin.bottom * dpr -
-            physicalHeight -
-            stackOffset;
+        anchorLeft = workAreaLogical.width - marginRight - slotWidth;
+        anchorTop = workAreaLogical.height - marginBottom - fullStackHeight;
+      case NotificationPosition.bottomLeft:
+        anchorLeft = marginLeft;
+        anchorTop = workAreaLogical.height - marginBottom - fullStackHeight;
+      case NotificationPosition.topRight:
+        anchorLeft = workAreaLogical.width - marginRight - slotWidth;
+        anchorTop = marginTop;
+      case NotificationPosition.topLeft:
+        anchorLeft = marginLeft;
+        anchorTop = marginTop;
     }
 
-    return Offset(left, top);
+    final borderInsets = _config.stackBorderInsets;
+    final windowLogicalTop =
+        anchorTop + minSlot * slotHeight - borderInsets.top;
+    final windowLogicalLeft = anchorLeft - borderInsets.left;
+    final windowLogicalSize = Size(
+      slotWidth + borderInsets.horizontal,
+      visibleSlots * slotHeight + borderInsets.vertical,
+    );
+
+    final physicalOrigin = Offset(
+      workArea.origin.dx + windowLogicalLeft * dpr,
+      workArea.origin.dy + windowLogicalTop * dpr,
+    );
+    final physicalSize = Size(
+      windowLogicalSize.width * dpr,
+      windowLogicalSize.height * dpr,
+    );
+
+    return _StackGeometry(
+      logicalSize: windowLogicalSize,
+      physicalSize: physicalSize,
+      physicalPosition: physicalOrigin,
+      slotMinIndex: minSlot,
+    );
   }
+
+  double _slotHeight() => _config.messageHeight;
 
   void _scheduleAutoDismiss(ActiveNotificationEntry active) {
     final duration = active.notification.duration ?? _config.defaultDuration;
-
     active.dismissTimer = Timer(duration, () {
       dismiss(active.notification.id);
     });
   }
 
-  void _handleWindowDestroyed(String id) {
-    final index = _activeNotifications.indexWhere(
-      (n) => n.notification.id == id,
-    );
-
-    if (index != -1) {
-      final active = _activeNotifications.removeAt(index);
-      active.cancelTimer();
-      notifyListeners();
-      _processQueue();
-    }
-  }
-
-  void _processQueue() {
-    if (_pendingQueue.isEmpty) return;
-    if (_activeNotifications.length >= _config.maxVisibleNotifications) return;
-
-    final next = _pendingQueue.dequeue();
-    if (next != null) {
-      _displayNotification(next);
-    }
-  }
-
-  Size _getNotificationSize(SteamNotification notification) {
-    final width = switch (notification) {
-      CustomNotification(width: final w?) => w,
-      _ => _config.defaultWidth,
+  /// Resolves which slot indices are occupied for a given active count.
+  ///
+  /// Bottom-anchored positions grow upward (newest always at the
+  /// bottom slot, existing shift up):
+  ///   k=1, C=3 → [2]           (bottom only)
+  ///   k=2, C=3 → [1, 2]        (middle + bottom)
+  ///   k=3, C=3 → [0, 1, 2]     (full stack)
+  ///
+  /// Top-anchored positions grow downward (newest at the bottom of
+  /// the current stack, anchor fixed at top):
+  ///   k=1, C=3 → [0]
+  ///   k=2, C=3 → [0, 1]
+  ///   k=3, C=3 → [0, 1, 2]
+  static List<int> slotsForCount(
+    int k,
+    int capacity,
+    NotificationPosition position,
+  ) {
+    if (k <= 0) return const [];
+    final visible = k >= capacity ? capacity : k;
+    final start = switch (position) {
+      NotificationPosition.bottomRight ||
+      NotificationPosition.bottomLeft => capacity - visible,
+      NotificationPosition.topRight || NotificationPosition.topLeft => 0,
     };
-
-    final height = switch (notification) {
-      AchievementNotification() => _config.achievementHeight,
-      MessageNotification() => _config.messageHeight,
-      CustomNotification(height: final h?) => h,
-      CustomNotification() => _config.achievementHeight,
-    };
-
-    return Size(width, height);
+    return [for (var i = start; i < start + visible; i++) i];
   }
+}
+
+class _StackGeometry {
+  const _StackGeometry({
+    required this.logicalSize,
+    required this.physicalSize,
+    required this.physicalPosition,
+    required this.slotMinIndex,
+  });
+
+  final Size logicalSize;
+  final Size physicalSize;
+  final Offset physicalPosition;
+
+  /// Index of the first occupied slot within the conceptual full stack
+  /// (0..capacity-1). Used to offset the background artwork.
+  final int slotMinIndex;
 }
