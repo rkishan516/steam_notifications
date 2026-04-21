@@ -156,13 +156,13 @@ class SteamNotificationService extends ChangeNotifier {
     if (geometry == null) return;
 
     final window = DecoratedWindow.forController(controller);
-    controller.setSize(geometry.physicalSize);
+    controller.setSize(geometry.logicalSize);
     controller.setConstraints(
       BoxConstraints(
-        minWidth: geometry.physicalSize.width,
-        minHeight: geometry.physicalSize.height,
-        maxWidth: geometry.physicalSize.width,
-        maxHeight: geometry.physicalSize.height,
+        minWidth: geometry.logicalSize.width,
+        minHeight: geometry.logicalSize.height,
+        maxWidth: geometry.logicalSize.width,
+        maxHeight: geometry.logicalSize.height,
       ),
     );
     await window?.setPosition(geometry.physicalPosition);
@@ -173,16 +173,16 @@ class SteamNotificationService extends ChangeNotifier {
     _StackGeometry geometry,
   ) async {
     controller.enableDecoratedWindow();
-    controller.setSize(geometry.physicalSize);
+    controller.setSize(geometry.logicalSize);
     final window = DecoratedWindow.forController(controller);
     await window?.setPosition(geometry.physicalPosition);
 
     controller.setConstraints(
       BoxConstraints(
-        minWidth: geometry.physicalSize.width,
-        minHeight: geometry.physicalSize.height,
-        maxWidth: geometry.physicalSize.width,
-        maxHeight: geometry.physicalSize.height,
+        minWidth: geometry.logicalSize.width,
+        minHeight: geometry.logicalSize.height,
+        maxWidth: geometry.logicalSize.width,
+        maxHeight: geometry.logicalSize.height,
       ),
     );
 
