@@ -141,9 +141,22 @@ class _StackContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visibleCount = entries.length.clamp(0, capacity);
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Hairline dividers between adjacent visible slots. Drawn behind
+        // the background artwork and notification content.
+        for (var i = 1; i < visibleCount; i++)
+          Positioned(
+            left: 12,
+            right: 12,
+            top: i * slotSize.height - 0.5,
+            height: 1,
+            child: const IgnorePointer(
+              child: ColoredBox(color: SteamColors.backgroundSecondary),
+            ),
+          ),
         if (background != null)
           Positioned(
             left: 0,

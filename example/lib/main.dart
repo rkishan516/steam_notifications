@@ -54,7 +54,6 @@ SteamNotificationConfig _buildConfig({
   stackDecorationBuilder: (context, activeCount) => BoxDecoration(
     color: const Color(0xFF1D1D1D),
     borderRadius: BorderRadius.circular(8),
-    border: Border.all(color: const Color(0xFF2A3F5F)),
     boxShadow: const [
       BoxShadow(
         color: Color(0x99000000),

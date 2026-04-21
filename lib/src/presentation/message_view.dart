@@ -35,11 +35,43 @@ class MessageView extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
-          NotificationAvatar(
-            avatar: notification.avatar,
-            avatarUrl: notification.avatarUrl,
-            size: 40,
+          // Avatar with online indicator at bottom-right
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                NotificationAvatar(
+                  avatar: notification.avatar,
+                  avatarUrl: notification.avatarUrl,
+                  size: 40,
+                ),
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: SteamColors.accentGreen,
+                      border: Border.all(
+                        color: SteamColors.surface,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: SteamColors.accentGreen.withValues(alpha: 0.5),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 12),
 
@@ -51,36 +83,13 @@ class MessageView extends StatelessWidget {
               children: [
                 // Sender name
                 if (notification.senderName != null) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          notification.senderName!,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: SteamColors.accentBlue,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // Online indicator dot
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: SteamColors.accentGreen,
-                          boxShadow: [
-                            BoxShadow(
-                              color:
-                                  SteamColors.accentGreen.withValues(alpha: 0.5),
-                              blurRadius: 4,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  Text(
+                    notification.senderName!,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: SteamColors.accentBlue,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                 ],
