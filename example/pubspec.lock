@@ -106,10 +106,10 @@ packages:
     dependency: transitive
     description:
       name: hooks
-      sha256: e79ed1e8e1929bc6ecb6ec85f0cb519c887aa5b423705ded0d0f2d9226def388
+      sha256: "025f060e86d2d4c3c47b56e33caf7f93bf9283340f26d23424ebcfccf34f621e"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "1.0.3"
   lints:
     dependency: transitive
     description:
@@ -154,10 +154,10 @@ packages:
     dependency: transitive
     description:
       name: native_toolchain_ninja
-      sha256: f871f4e5561101c754ead85a8d1436f8c5816403e500972cbb03243b9e0704f1
+      sha256: "3d22b36191c6a1df9d8a7678fde395bd299e5bf2674ce9460ccb719d748228e5"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.1"
+    version: "0.1.2"
   path:
     dependency: transitive
     description:
@@ -182,6 +182,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  record_use:
+    dependency: transitive
+    description:
+      name: record_use
+      sha256: "2551bd8eecfe95d14ae75f6021ad0248be5c27f138c2ec12fcb52b500b3ba1ed"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.0"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -246,16 +254,16 @@ packages:
     dependency: transitive
     description:
       name: win32
-      sha256: "316d813e24518851c2682b1a57bc7e2e54e9c7b81493d48bef502fea0c17f841"
+      sha256: ba7d5750e3441caa1bbe31d9e516348fcf8dfcb32aa29ef87a844a59f4d1f1d0
       url: "https://pub.dev"
     source: hosted
-    version: "6.0.1"
+    version: "6.1.0"
   window_decoration:
     dependency: transitive
     description:
       path: "packages/window_decoration"
       ref: HEAD
-      resolved-ref: "9ceed40414ec4b201db912bbe8470c4d3fb96663"
+      resolved-ref: e3ad74bdbabb493b05730db82c0718ff4c5a4f07
       url: "https://github.com/rkishan516/window_decoration.git"
     source: git
     version: "0.2.0"
