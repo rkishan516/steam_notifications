@@ -1,5 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:steam_notifications/steam_notifications.dart';
 
@@ -115,6 +117,31 @@ class DemoPage extends StatefulWidget {
 
 class _DemoPageState extends State<DemoPage> {
   NotificationPosition _position = NotificationPosition.bottomRight;
+  Timer? _autoTimer;
+  int _autoCounter = 0;
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    super.dispose();
+  }
+
+  void _toggleAutoNotify() {
+    if (_autoTimer != null) {
+      _autoTimer!.cancel();
+      setState(() => _autoTimer = null);
+      return;
+    }
+    setState(() {
+      _autoTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _autoCounter++;
+        SteamNotifications.showAchievement(
+          title: 'Auto Notification #$_autoCounter',
+          description: 'Fired every 10 seconds',
+        );
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +245,23 @@ class _DemoPageState extends State<DemoPage> {
                     label: const Text('Show Multiple (Test Stack Overflow)'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _toggleAutoNotify,
+                    icon: Icon(
+                      _autoTimer == null ? Icons.play_arrow : Icons.stop,
+                    ),
+                    label: Text(
+                      _autoTimer == null
+                          ? 'Start Auto-Notify (every 10s)'
+                          : 'Stop Auto-Notify',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _autoTimer == null
+                          ? Colors.green
+                          : Colors.blueGrey,
                     ),
                   ),
                   const SizedBox(height: 12),

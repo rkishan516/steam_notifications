@@ -1,11 +1,9 @@
 // ignore_for_file: invalid_use_of_internal_member, implementation_imports
 
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter/widgets.dart';
-import 'package:win32/win32.dart';
 import 'package:window_decoration/window_decoration.dart';
 
 import '../config/notification_config.dart';
@@ -130,13 +128,6 @@ class SteamNotificationService extends ChangeNotifier {
     final geometry = _resolveGeometry();
     if (geometry == null) return;
 
-    // Capture the foreground window BEFORE creating the notification
-    // window: Flutter's window creation calls ShowWindow(SW_SHOW) which
-    // would otherwise steal focus from a fullscreen game (causing CS2
-    // et al. to minimize). We restore it in [_configureStackWindow].
-    final HWND? previousForeground =
-        Platform.isWindows ? GetForegroundWindow() : null;
-
     final controller = RegularWindowController(
       preferredSize: geometry.logicalSize,
       title: '',
@@ -152,7 +143,7 @@ class SteamNotificationService extends ChangeNotifier {
     // re-enter the scheduler during a post-frame callback.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Timer.run(() async {
-        await _configureStackWindow(controller, geometry, previousForeground);
+        await _configureStackWindow(controller, geometry);
       });
     });
   }
@@ -180,14 +171,11 @@ class SteamNotificationService extends ChangeNotifier {
   Future<void> _configureStackWindow(
     RegularWindowController controller,
     _StackGeometry geometry,
-    HWND? previousForeground,
   ) async {
     controller.enableDecoratedWindow();
     controller.setSize(geometry.logicalSize);
     final window = DecoratedWindow.forController(controller);
-    // Make the window non-activating before anything else shows it —
-    // prevents clicks and subsequent z-order operations from stealing
-    // foreground focus from fullscreen games.
+    // WS_EX_NOACTIVATE so clicks and z-order ops don't steal focus.
     await window?.setNoActivate(enabled: true);
     await window?.setPosition(geometry.physicalPosition);
 
@@ -202,15 +190,7 @@ class SteamNotificationService extends ChangeNotifier {
 
     await window?.setBackgroundColor(SteamColors.surface);
     await window?.setSkipTaskbar(skip: true);
-    await window?.setAlwaysOnTop(alwaysOnTop: true);
     await window?.show();
-
-    // The initial RegularWindowController construction may already have
-    // activated the HWND (Flutter creates it with SW_SHOW). Restore the
-    // previous foreground so exclusive-fullscreen apps don't minimize.
-    if (previousForeground != null && previousForeground.isNotNull) {
-      SetForegroundWindow(previousForeground);
-    }
   }
 
   void _destroyStackWindow() {
