@@ -143,6 +143,7 @@ class SteamNotificationService extends ChangeNotifier {
     // re-enter the scheduler during a post-frame callback.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Timer.run(() async {
+        if (!identical(_stackController, controller)) return;
         await _configureStackWindow(controller, geometry);
       });
     });
@@ -172,25 +173,33 @@ class SteamNotificationService extends ChangeNotifier {
     RegularWindowController controller,
     _StackGeometry geometry,
   ) async {
-    controller.enableDecoratedWindow();
-    controller.setSize(geometry.logicalSize);
-    final window = DecoratedWindow.forController(controller);
-    // WS_EX_NOACTIVATE so clicks and z-order ops don't steal focus.
-    await window?.setNoActivate(enabled: true);
-    await window?.setPosition(geometry.physicalPosition);
+    try {
+      controller.enableDecoratedWindow();
+      controller.setSize(geometry.logicalSize);
+      final window = DecoratedWindow.forController(controller);
+      // WS_EX_NOACTIVATE so clicks and z-order ops don't steal focus.
+      await window?.setNoActivate(enabled: true);
+      if (!identical(_stackController, controller)) return;
+      await window?.setPosition(geometry.physicalPosition);
+      if (!identical(_stackController, controller)) return;
 
-    controller.setConstraints(
-      BoxConstraints(
-        minWidth: geometry.logicalSize.width,
-        minHeight: geometry.logicalSize.height,
-        maxWidth: geometry.logicalSize.width,
-        maxHeight: geometry.logicalSize.height,
-      ),
-    );
+      controller.setConstraints(
+        BoxConstraints(
+          minWidth: geometry.logicalSize.width,
+          minHeight: geometry.logicalSize.height,
+          maxWidth: geometry.logicalSize.width,
+          maxHeight: geometry.logicalSize.height,
+        ),
+      );
 
-    await window?.setBackgroundColor(SteamColors.surface);
-    await window?.setSkipTaskbar(skip: true);
-    await window?.show();
+      await window?.setBackgroundColor(SteamColors.surface);
+      if (!identical(_stackController, controller)) return;
+      await window?.setSkipTaskbar(skip: true);
+      if (!identical(_stackController, controller)) return;
+      await window?.show();
+    } on StateError {
+      // Window was destroyed concurrently; nothing to configure.
+    }
   }
 
   void _destroyStackWindow() {
