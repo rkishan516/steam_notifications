@@ -29,10 +29,10 @@ packages:
     dependency: transitive
     description:
       name: code_assets
-      sha256: "83ccdaa064c980b5596c35dd64a8d3ecc68620174ab9b90b6343b753aa721687"
+      sha256: bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.0"
+    version: "1.2.1"
   collection:
     dependency: transitive
     description:
@@ -106,10 +106,10 @@ packages:
     dependency: transitive
     description:
       name: hooks
-      sha256: "025f060e86d2d4c3c47b56e33caf7f93bf9283340f26d23424ebcfccf34f621e"
+      sha256: "9a62a50b50b769a737bc0a8ff381f333529df3ab746b2f6b02e83760231455ba"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.3"
+    version: "2.0.2"
   lints:
     dependency: transitive
     description:
@@ -138,26 +138,18 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349"
+      sha256: c82594181e3312f3d0695fc95aaaf7758d75b8d4ae2bbecf223b9fd5109a059d
       url: "https://pub.dev"
     source: hosted
-    version: "1.18.0"
-  native_toolchain_c:
-    dependency: transitive
-    description:
-      name: native_toolchain_c
-      sha256: "6ba77bb18063eebe9de401f5e6437e95e1438af0a87a3a39084fbd37c90df572"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.17.6"
+    version: "1.18.3"
   native_toolchain_ninja:
     dependency: transitive
     description:
       name: native_toolchain_ninja
-      sha256: "3d22b36191c6a1df9d8a7678fde395bd299e5bf2674ce9460ccb719d748228e5"
+      sha256: "0f58d51a9285e96396d7e04376fb0172ca1a44d00d977defff73b9d61f2ed692"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.2"
+    version: "0.2.0"
   path:
     dependency: transitive
     description:
@@ -246,24 +238,24 @@ packages:
     dependency: transitive
     description:
       name: vector_math
-      sha256: d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b
+      sha256: "1d774bbdf6b72a0b12122fc1560c9c2d2a67db5a4a4cc2bd8a5c990ab20e3188"
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.0"
+    version: "2.4.0"
   win32:
     dependency: transitive
     description:
       name: win32
-      sha256: ba7d5750e3441caa1bbe31d9e516348fcf8dfcb32aa29ef87a844a59f4d1f1d0
+      sha256: ba6f4bba816c8d7e3c1580e170f3786d216951cc6b94babc3b814c08d2cb2738
       url: "https://pub.dev"
     source: hosted
-    version: "6.1.0"
+    version: "6.3.0"
   window_decoration:
     dependency: transitive
     description:
       path: "packages/window_decoration"
       ref: HEAD
-      resolved-ref: e3ad74bdbabb493b05730db82c0718ff4c5a4f07
+      resolved-ref: "12c307ad3b26ebaa50f98456f6a435cf71cb8fc5"
       url: "https://github.com/rkishan516/window_decoration.git"
     source: git
     version: "0.2.0"
