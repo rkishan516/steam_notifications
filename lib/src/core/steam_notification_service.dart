@@ -1,9 +1,13 @@
 // ignore_for_file: invalid_use_of_internal_member, implementation_imports
 
 import 'dart:async';
+import 'dart:ffi' hide Size;
+import 'dart:io' show Platform;
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter/widgets.dart';
+import 'package:win32/win32.dart';
 import 'package:window_decoration/window_decoration.dart';
 
 import '../config/notification_config.dart';
@@ -76,6 +80,13 @@ class SteamNotificationService extends ChangeNotifier {
   Future<void> show(SteamNotification notification) async {
     final isFirst = _activeNotifications.isEmpty;
 
+    // Capture the foreground window now, before any window work. For the
+    // first notification this is before the stack window exists; for
+    // later ones the stack window is already WS_EX_NOACTIVATE and never
+    // takes foreground, so this is still the user's real foreground app.
+    // Used to decide topmost per-notification (see [_applyStackTopmost]).
+    final foreground = _foregroundWindow();
+
     if (_activeNotifications.length >= _config.stackCapacity) {
       final dropped = _activeNotifications.removeAt(0);
       dropped.cancelTimer();
@@ -89,9 +100,9 @@ class SteamNotificationService extends ChangeNotifier {
     notifyListeners();
 
     if (isFirst) {
-      await _createStackWindow();
+      await _createStackWindow(foreground);
     } else {
-      await _updateStackWindow();
+      await _updateStackWindow(foreground);
     }
   }
 
@@ -110,7 +121,7 @@ class SteamNotificationService extends ChangeNotifier {
     if (_activeNotifications.isEmpty) {
       _destroyStackWindow();
     } else {
-      _updateStackWindow();
+      _updateStackWindow(_foregroundWindow());
     }
   }
 
@@ -124,7 +135,7 @@ class SteamNotificationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _createStackWindow() async {
+  Future<void> _createStackWindow(HWND? foreground) async {
     final geometry = _resolveGeometry();
     if (geometry == null) return;
 
@@ -144,34 +155,43 @@ class SteamNotificationService extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Timer.run(() async {
         if (!identical(_stackController, controller)) return;
-        await _configureStackWindow(controller, geometry);
+        await _configureStackWindow(controller, geometry, foreground);
       });
     });
   }
 
-  Future<void> _updateStackWindow() async {
+  Future<void> _updateStackWindow(HWND? foreground) async {
     final controller = _stackController;
     if (controller == null) return;
 
     final geometry = _resolveGeometry();
     if (geometry == null) return;
 
-    final window = DecoratedWindow.forController(controller);
-    controller.setSize(geometry.logicalSize);
-    controller.setConstraints(
-      BoxConstraints(
-        minWidth: geometry.logicalSize.width,
-        minHeight: geometry.logicalSize.height,
-        maxWidth: geometry.logicalSize.width,
-        maxHeight: geometry.logicalSize.height,
-      ),
-    );
-    await window?.setPosition(geometry.physicalPosition);
+    try {
+      final window = DecoratedWindow.forController(controller);
+      controller.setSize(geometry.logicalSize);
+      controller.setConstraints(
+        BoxConstraints(
+          minWidth: geometry.logicalSize.width,
+          minHeight: geometry.logicalSize.height,
+          maxWidth: geometry.logicalSize.width,
+          maxHeight: geometry.logicalSize.height,
+        ),
+      );
+      await window?.setPosition(geometry.physicalPosition);
+      // Re-evaluate topmost against the live foreground so the stack stops
+      // floating over a game that went fullscreen mid-stack (and starts
+      // floating again once it exits).
+      await _applyStackTopmost(window, foreground);
+    } on StateError {
+      // Window was destroyed concurrently; nothing to update.
+    }
   }
 
   Future<void> _configureStackWindow(
     RegularWindowController controller,
     _StackGeometry geometry,
+    HWND? foreground,
   ) async {
     try {
       controller.enableDecoratedWindow();
@@ -196,6 +216,8 @@ class SteamNotificationService extends ChangeNotifier {
       if (!identical(_stackController, controller)) return;
       await window?.setSkipTaskbar(skip: true);
       if (!identical(_stackController, controller)) return;
+      await _applyStackTopmost(window, foreground);
+      if (!identical(_stackController, controller)) return;
       await window?.show();
     } on StateError {
       // Window was destroyed concurrently; nothing to configure.
@@ -206,6 +228,98 @@ class SteamNotificationService extends ChangeNotifier {
     _stackController?.destroy();
     _stackController = null;
     notifyListeners();
+  }
+
+  /// The current foreground window, or `null` off Windows.
+  HWND? _foregroundWindow() =>
+      Platform.isWindows ? GetForegroundWindow() : null;
+
+  /// Brings the stack above normal windows so it isn't immediately
+  /// occluded by the foreground app (otherwise it flashes and vanishes).
+  ///
+  /// Skips topmost when a fullscreen app is active: making any window
+  /// topmost over an exclusive-fullscreen game (e.g. CS2) forces it out
+  /// of exclusive mode and the game minimises — even with
+  /// WS_EX_NOACTIVATE, which only prevents focus theft, not the
+  /// exclusive-mode flip. The toast then stays a normal window behind
+  /// the game instead of disturbing it.
+  ///
+  /// Two detectors are combined because neither covers everything: the
+  /// shell state catches legacy exclusive-mode Direct3D fullscreen and
+  /// presentation mode (invisible to a rect check), and the rect check
+  /// catches borderless windowed fullscreen (which the shell reports as
+  /// "accepts notifications"). Skip topmost if either says fullscreen.
+  Future<void> _applyStackTopmost(
+    DecoratedWindow? window,
+    HWND? foreground,
+  ) async {
+    final fullscreen =
+        _isShellInFullscreenState() || _isWindowFullscreen(foreground);
+    await window?.setAlwaysOnTop(alwaysOnTop: !fullscreen);
+  }
+
+  /// Whether the Windows shell reports a state where a topmost toast
+  /// would be disruptive (fullscreen app, exclusive-mode Direct3D game,
+  /// presentation mode, or a full-screen Store app) via
+  /// `SHQueryUserNotificationState`. This is the authoritative way to
+  /// detect legacy exclusive-mode Direct3D fullscreen and presentation
+  /// mode, which a window-rect comparison cannot see reliably.
+  ///
+  /// Returns `false` off Windows or if the query fails — callers also run
+  /// the rect-based [_isWindowFullscreen] as a fallback.
+  bool _isShellInFullscreenState() {
+    if (!Platform.isWindows) return false;
+
+    final statePtr = calloc<Int32>();
+    try {
+      // Non-zero HRESULT means the query failed; treat as "not fullscreen"
+      // and let the rect fallback decide.
+      if (_shQueryUserNotificationState(statePtr) != 0) return false;
+      final state = statePtr.value;
+      return state == _qunsBusy ||
+          state == _qunsRunningD3dFullScreen ||
+          state == _qunsPresentationMode ||
+          state == _qunsApp;
+    } on Object {
+      // shell32 binding/look-up failure must never break notifications;
+      // degrade to the rect-based fallback instead.
+      return false;
+    } finally {
+      calloc.free(statePtr);
+    }
+  }
+
+  /// Whether [hwnd] covers its entire monitor — our proxy for a
+  /// fullscreen app (exclusive or borderless). Used to suppress
+  /// always-on-top so the notification stack never forces a
+  /// fullscreen game to minimise or drop out of exclusive mode.
+  ///
+  /// Returns `false` off Windows, for a null/zero handle, and for the
+  /// shell/desktop (which legitimately span the monitor when nothing
+  /// is fullscreen).
+  bool _isWindowFullscreen(HWND? hwnd) {
+    if (!Platform.isWindows || hwnd == null || hwnd.address == 0) return false;
+    if (hwnd == GetShellWindow() || hwnd == GetDesktopWindow()) return false;
+
+    final windowRect = calloc<RECT>();
+    final monitorInfo = calloc<MONITORINFO>();
+    try {
+      if (!GetWindowRect(hwnd, windowRect).value) return false;
+      final monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      monitorInfo.ref.cbSize = sizeOf<MONITORINFO>();
+      if (!GetMonitorInfo(monitor, monitorInfo)) return false;
+
+      final w = windowRect.ref;
+      final m = monitorInfo.ref.rcMonitor;
+      return w.left <= m.left &&
+          w.top <= m.top &&
+          w.right >= m.right &&
+          w.bottom >= m.bottom;
+    } finally {
+      calloc
+        ..free(windowRect)
+        ..free(monitorInfo);
+    }
   }
 
   void _handleWindowDestroyed() {
@@ -343,3 +457,22 @@ class _StackGeometry {
   /// (0..capacity-1). Used to offset the background artwork.
   final int slotMinIndex;
 }
+
+// `SHQueryUserNotificationState` reports the shell's global notification
+// state (including legacy exclusive-mode Direct3D fullscreen). It lives in
+// shell32.dll but isn't exposed by package:win32, so we bind it directly.
+// Lazily initialised — never touched off Windows.
+final DynamicLibrary _shell32 = DynamicLibrary.open('shell32.dll');
+
+final int Function(Pointer<Int32>) _shQueryUserNotificationState =
+    _shell32.lookupFunction<Int32 Function(Pointer<Int32>),
+        int Function(Pointer<Int32>)>('SHQueryUserNotificationState');
+
+// QUERY_USER_NOTIFICATION_STATE values where a topmost toast would be
+// disruptive, so we don't float the stack over them: a full-screen app,
+// an exclusive-mode Direct3D game, Windows presentation mode, or a
+// full-screen Store app.
+const int _qunsBusy = 2; // a full-screen application is running
+const int _qunsRunningD3dFullScreen = 3; // exclusive-mode Direct3D fullscreen
+const int _qunsPresentationMode = 4; // presentation settings turned on
+const int _qunsApp = 7; // Windows Store app running full-screen
