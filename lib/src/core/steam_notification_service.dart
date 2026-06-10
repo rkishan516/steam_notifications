@@ -78,14 +78,16 @@ class SteamNotificationService extends ChangeNotifier {
   }
 
   Future<void> show(SteamNotification notification) async {
-    final isFirst = _activeNotifications.isEmpty;
-
-    // Capture the foreground window now, before any window work. For the
-    // first notification this is before the stack window exists; for
-    // later ones the stack window is already WS_EX_NOACTIVATE and never
-    // takes foreground, so this is still the user's real foreground app.
-    // Used to decide topmost per-notification (see [_applyStackTopmost]).
+    // Capture before any window work, so the toast itself can't be the
+    // sampled foreground.
     final foreground = _foregroundWindow();
+
+    // Drop notifications while a fullscreen app is active: creating the
+    // toast window would steal foreground and minimise an exclusive-
+    // fullscreen game, and it can't be shown over one anyway.
+    if (_isFullscreenActive(foreground)) return;
+
+    final isFirst = _activeNotifications.isEmpty;
 
     if (_activeNotifications.length >= _config.stackCapacity) {
       final dropped = _activeNotifications.removeAt(0);
@@ -234,29 +236,22 @@ class SteamNotificationService extends ChangeNotifier {
   HWND? _foregroundWindow() =>
       Platform.isWindows ? GetForegroundWindow() : null;
 
-  /// Brings the stack above normal windows so it isn't immediately
-  /// occluded by the foreground app (otherwise it flashes and vanishes).
-  ///
-  /// Skips topmost when a fullscreen app is active: making any window
-  /// topmost over an exclusive-fullscreen game (e.g. CS2) forces it out
-  /// of exclusive mode and the game minimises — even with
-  /// WS_EX_NOACTIVATE, which only prevents focus theft, not the
-  /// exclusive-mode flip. The toast then stays a normal window behind
-  /// the game instead of disturbing it.
-  ///
-  /// Two detectors are combined because neither covers everything: the
-  /// shell state catches legacy exclusive-mode Direct3D fullscreen and
-  /// presentation mode (invisible to a rect check), and the rect check
-  /// catches borderless windowed fullscreen (which the shell reports as
-  /// "accepts notifications"). Skip topmost if either says fullscreen.
+  /// Brings the stack above normal windows so it isn't occluded by the
+  /// foreground app. Skips topmost while a fullscreen app is active to
+  /// avoid forcing an exclusive-fullscreen game out of fullscreen — a
+  /// safety net now that [show] suppresses notifications during
+  /// fullscreen, still re-checked on dismiss.
   Future<void> _applyStackTopmost(
     DecoratedWindow? window,
     HWND? foreground,
   ) async {
-    final fullscreen =
-        _isShellInFullscreenState() || _isWindowFullscreen(foreground);
-    await window?.setAlwaysOnTop(alwaysOnTop: !fullscreen);
+    await window?.setAlwaysOnTop(alwaysOnTop: !_isFullscreenActive(foreground));
   }
+
+  /// Whether a fullscreen app is active — shell state (exclusive-mode /
+  /// presentation) or a foreground window-rect (borderless) check.
+  bool _isFullscreenActive(HWND? foreground) =>
+      _isShellInFullscreenState() || _isWindowFullscreen(foreground);
 
   /// Whether the Windows shell reports a state where a topmost toast
   /// would be disruptive (fullscreen app, exclusive-mode Direct3D game,
