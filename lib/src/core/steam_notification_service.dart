@@ -142,7 +142,7 @@ class SteamNotificationService extends ChangeNotifier {
     if (geometry == null) return;
 
     final controller = RegularWindowController(
-      preferredSize: geometry.logicalSize,
+      size: geometry.logicalSize,
       title: '',
       delegate: NotificationWindowDelegate(
         onDestroyed: _handleWindowDestroyed,

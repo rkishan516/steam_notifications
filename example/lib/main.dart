@@ -21,7 +21,7 @@ void main() async {
   await SteamNotifications.initialize(config: _buildConfig());
 
   final controller = RegularWindowController(
-    preferredSize: const Size(800, 600),
+    size: const Size(800, 600),
     title: 'Steam Notifications Demo',
     delegate: MainWindowDelegate(),
   );
